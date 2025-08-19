@@ -20,10 +20,12 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(
+    N_slider,
     alpha_slider,
     mo,
     mu_slider,
     p_slider,
+    regenerate_button,
     scheme_dropdown,
     sigma0_slider,
     tracks_slider,
@@ -35,19 +37,23 @@ def _(
 
     _Implement the Euler and the Milstein strong order 1.0 scheme and generate numerical tracks for $0 \leq t \leq 1$ year for different values of $p$ and $\alpha$._
 
-    Both schemes are implemented in the `run_simulation` function below. For the Black-Scholes model, volatility $\sigma$ is constant, so both parameters $p$ and $\alpha$ do not change the plotted tracks. The number of tracks to generate or the scheme can be adjusted below.
+    Both schemes are implemented in the cells below. For the Black-Scholes model, volatility $\sigma$ is constant, so both parameters $p$ and $\alpha$ do not change the plotted tracks. The initial conditions, number of tracks to generate, the scheme or the number of time steps can be adjusted below.
 
-    | Parameter | Slider | Value |
-    | --- | --- | --- |
-    | $p$ | {p_slider} | {p_slider.value} |
-    | $\alpha$ | {alpha_slider} | {alpha_slider.value} |
-    | $\sigma_0$ | {sigma0_slider} | {sigma0_slider.value} |
-    | $\xi_0$ | {xi0_slider} | {xi0_slider.value} |
-    | $\mu$ | {mu_slider} | {mu_slider.value} |
-    | Number of tracks to generate | {tracks_slider} | {tracks_slider.value} |
-    | Scheme | {scheme_dropdown} | {scheme_dropdown.value} |
+    | Parameter | Slider | Value | Parameter | Slider | Value |
+    |---|---|---|---|---|---|
+    | $p$ | {p_slider} | {p_slider.value} | Number of time steps | {N_slider} | {N_slider.value} |
+    | $\alpha$ | {alpha_slider} | {alpha_slider.value} | Number of tracks to generate | {tracks_slider} | {tracks_slider.value} |
+    | $\sigma_0$ | {sigma0_slider} | {sigma0_slider.value} | Scheme | {scheme_dropdown} | {scheme_dropdown.value} |
+    | $\xi_0$ | {xi0_slider} | {xi0_slider.value} | Regenerate Plot | {regenerate_button} | Click to regenerate plot |
+    | $\mu$ | {mu_slider} | {mu_slider.value} | | | |
     """
     )
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""### Numerical Simulations for Full Model""")
     return
 
 
@@ -61,9 +67,9 @@ def _(S, plt, scheme_dropdown, show_plot_svg, t):
     _ax.set_title(
         f"Simulated Stock Price Paths ({S.shape[0]} Tracks) - {scheme_dropdown.value} Scheme - Full Model"
     )
-    _ax.set_xlabel("Time (Years) ($t$)")
-    _ax.set_ylabel("Stock Price ($S_t$)")
-    _ax.set_ylim(0, 100)
+    _ax.set_xlabel("Time $t$ [years]")
+    _ax.set_ylabel("Stock Price $S_t$ [€]")
+    _ax.set_ylim(-1, 100)
     _ax.grid(True)
     _ax.legend(loc="lower left")
 
@@ -71,14 +77,9 @@ def _(S, plt, scheme_dropdown, show_plot_svg, t):
     return
 
 
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""### Numerical Simulations for Full Model""")
-    return
-
-
 @app.cell
 def _(
+    N_slider,
     alpha_slider,
     mu_slider,
     p_slider,
@@ -96,10 +97,9 @@ def _(
             "mu": mu_slider.value,  # Drift (annual)
             "p": p_slider.value,  # Speed of reversion for sigma
             "alpha": alpha_slider.value,  # Speed of reversion for xi
-            "v": 0.5,  # Volatility of volatility
             # Simulation Parameters
             "T": 1.0,  # Time horizon (1 year)
-            "N": 500,  # Number of time steps
+            "N": N_slider.value,  # Number of time steps
             "num_tracks": tracks_slider.value,  # Number of paths to simulate
         }
     return (get_full_model_params,)
@@ -113,7 +113,7 @@ def _(np):
         """
         # Unpack parameters
         S0, sigma0, xi0 = params["S0"], params["sigma0"], params["xi0"]
-        mu, p, alpha, v = params["mu"], params["p"], params["alpha"], params["v"]
+        mu, p, alpha = params["mu"], params["p"], params["alpha"]
         T, N, num_tracks = params["T"], params["N"], params["num_tracks"]
         dt = T / N
 
@@ -140,7 +140,7 @@ def _(np):
             if scheme == "Euler":
                 S[:, n + 1] = S_t + mu * S_t * dt + sigma_t * S_t * dW1[:, n]
                 sigma[:, n + 1] = (
-                    sigma_t - p * (sigma_t - xi_t) * dt + v * sigma_t * dW2[:, n]
+                    sigma_t - (sigma_t - xi_t) * dt + p * sigma_t * dW2[:, n]
                 )
             elif scheme == "Milstein":
                 # S update with Milstein correction
@@ -149,30 +149,37 @@ def _(np):
                     S_t + mu * S_t * dt + sigma_t * S_t * dW1[:, n] + S_correction
                 )
 
-                # Sigma update with Milstein correction
-                sigma_correction = 0.5 * (v**2) * sigma_t * (dW2[:, n] ** 2 - dt)
+                # sigma update with Milstein correction
+                sigma_correction = 0.5 * p**2 * sigma_t * (dW2[:, n] ** 2 - dt)
                 sigma[:, n + 1] = (
                     sigma_t
-                    - p * (sigma_t - xi_t) * dt
-                    + v * sigma_t * dW2[:, n]
+                    - (sigma_t - xi_t) * dt
+                    + p * sigma_t * dW2[:, n]
                     + sigma_correction
                 )
             else:
                 raise ValueError("Scheme must be 'Euler' or 'Milstein'")
 
-            # Xi is deterministic, so its update is always an Euler step
-            xi[:, n + 1] = xi_t - alpha * (sigma_t - xi_t) * dt
+            # Xi is deterministic, so its update is always an Forward-Euler step
+            xi[:, n + 1] = xi_t + 1 / alpha * (sigma_t - xi_t) * dt
 
-            # Enforce positivity for S and sigma to prevent numerical instability
-            S[:, n + 1] = np.maximum(S[:, n + 1], 0)
-            sigma[:, n + 1] = np.maximum(sigma[:, n + 1], 0)
+            # Optional: enforce positivity for S and sigma to prevent numerical instability
+            # S[:, n + 1] = np.maximum(S[:, n + 1], 0)  # Ensure stock price is non-negative
+            # sigma[:, n + 1] = np.maximum(sigma[:, n + 1], 0)  # Ensure volatility is non-negative
 
         return t, S, sigma, xi
     return (run_full_simulation,)
 
 
 @app.cell
-def _(get_full_model_params, run_full_simulation, scheme_dropdown):
+def _(
+    get_full_model_params,
+    regenerate_button,
+    run_full_simulation,
+    scheme_dropdown,
+):
+    regenerate_button  # regenerates the plot when the regenerate button is pressed
+
     # Get parameters
     params = get_full_model_params()
 
@@ -236,24 +243,26 @@ def _(np):
 
 
 @app.cell
-def _(tracks_slider):
+def _(N_slider, mu_slider, sigma0_slider, tracks_slider):
     def get_params():
         """Returns a dictionary of model and simulation parameters."""
         return {
             # Model Parameters
             "S0": 50.0,  # Initial stock price
-            "mu": 0.10,  # Drift (annual)
-            "sigma": 0.20,  # Volatility (annual)
+            "mu": mu_slider.value,  # Drift (annual)
+            "sigma": sigma0_slider.value,  # Volatility (annual)
             # Simulation Parameters
             "T": 1.0,  # Time horizon (1 year)
-            "N": 252,  # Number of time steps (e.g., trading days in a year)
+            "N": N_slider.value,  # Number of time steps (e.g., trading days in a year)
             "num_tracks": tracks_slider.value,  # Number of tracks to simulate
         }
     return (get_params,)
 
 
 @app.cell
-def _(get_params, run_simulation, scheme_dropdown):
+def _(get_params, regenerate_button, run_simulation, scheme_dropdown):
+    regenerate_button  # regenerates the plot when the regenerate button is pressed
+
     # Get parameters
     params_BS = get_params()
 
@@ -289,10 +298,98 @@ def _(mo):
 
     _Study the influence of parameters and $p$ and $\alpha$ on the behaviour of $S_t$._
 
-    By varying the parameters with the sliders above, the following can be observed.
+    See the report.
     """
     )
     return
+
+
+@app.cell
+def _(plt, show_plot_svg, stable_points, unstable_points):
+    _fig, _ax = plt.subplots(1, 1, figsize=(10, 6))
+
+    _ax.set_title(r"Numerical Stability Map for $p$ and $\alpha$")
+    _ax.scatter(
+        stable_points["p"],
+        stable_points["alpha"],
+        color="green",
+        label="Stable",
+    )
+    _ax.scatter(
+        unstable_points["p"],
+        unstable_points["alpha"],
+        color="red",
+        marker="x",
+        label="Unstable",
+    )
+    _ax.set_xlabel(r"$p$ (Speed of Volatility Reversion)")
+    _ax.set_ylabel(r"$\alpha$ (Speed of Memory Adaptation)")
+    _ax.set_xscale("log")  # Log scale is often useful for p
+    _ax.set_yscale("log")  # and for alpha
+    _ax.grid(True, ls="--", which="both")
+    _ax.legend()
+
+    show_plot_svg(_fig)
+    return
+
+
+@app.cell
+def _(
+    N_slider,
+    get_full_model_params,
+    np,
+    run_full_simulation,
+    scheme_dropdown,
+):
+    def analyze_stability(p_range, alpha_range, N=N_slider.value):
+        """
+        Analyzes the numerical stability of the full model over a grid of p and alpha values.
+
+        Returns:
+            A dictionary containing lists of stable and unstable (p, alpha) pairs.
+        """
+        stable_points = {"p": [], "alpha": []}
+        unstable_points = {"p": [], "alpha": []}
+
+        # Get base parameters and update number of tracks
+        params = get_full_model_params()  # Do this for the Full Model only
+        params["num_tracks"] = 1  # Only one track needed for assessment
+
+        for p_val in p_range:
+            for alpha_val in alpha_range:
+                params["p"] = p_val
+                params["alpha"] = alpha_val
+
+                # Run a single simulation
+                try:
+                    t, S, sigma, xi = run_full_simulation(
+                        params, scheme=scheme_dropdown.value
+                    )
+
+                    # Check for NaN or inf in the results
+                    if np.isnan(S).any() or np.isinf(S).any():
+                        unstable_points["p"].append(p_val)
+                        unstable_points["alpha"].append(alpha_val)
+                    else:
+                        stable_points["p"].append(p_val)
+                        stable_points["alpha"].append(alpha_val)
+                except (ValueError, FloatingPointError):
+                    # Catch errors that might arise during simulation
+                    unstable_points["p"].append(p_val)
+                    unstable_points["alpha"].append(alpha_val)
+
+        return stable_points, unstable_points
+    return (analyze_stability,)
+
+
+@app.cell
+def _(N_slider, analyze_stability, np):
+    stable_points, unstable_points = analyze_stability(
+        p_range=np.logspace(0, 2, 21),
+        alpha_range=np.logspace(0, 2, 21),
+        N=N_slider.value,
+    )
+    return stable_points, unstable_points
 
 
 @app.cell
@@ -304,22 +401,28 @@ def _(mo):
 @app.cell
 def _(mo):
     # sliders
-    p_slider = mo.ui.slider(-100, 100, 0.1, value=50)
-    alpha_slider = mo.ui.slider(-100, 100, 0.1, value=0.5)
+    p_slider = mo.ui.slider(0, 100, 0.1, value=50)
+    alpha_slider = mo.ui.slider(0.1, 100, 0.1, value=0.5)
     tracks_slider = mo.ui.slider(1, 10, 1, value=5)
     sigma0_slider = mo.ui.slider(0.01, 1.0, 0.01, value=0.20)
     xi0_slider = mo.ui.slider(0.01, 1.0, 0.01, value=0.20)
     mu_slider = mo.ui.slider(-1.0, 1.0, 0.01, value=0.10)
+    N_slider = mo.ui.slider(10, 1000, 1, value=252)
 
     # dropdowns
     scheme_dropdown = mo.ui.dropdown(
         ["Euler", "Milstein"],
         value="Euler",
     )
+
+    # buttons
+    regenerate_button = mo.ui.button()
     return (
+        N_slider,
         alpha_slider,
         mu_slider,
         p_slider,
+        regenerate_button,
         scheme_dropdown,
         sigma0_slider,
         tracks_slider,

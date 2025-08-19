@@ -57,6 +57,12 @@ def _(mo):
     return
 
 
+@app.cell
+def _(mo):
+    mo.md(r"""### Numerical Simulations for Black-Scholes""")
+    return
+
+
 @app.cell(hide_code=True)
 def _(S, plt, scheme_dropdown, show_plot_svg, t):
     _fig, _ax = plt.subplots(1, 1, figsize=(10, 6))
@@ -189,12 +195,6 @@ def _(
 
 
 @app.cell
-def _(mo):
-    mo.md(r"""### Numerical Simulations for Black-Scholes""")
-    return
-
-
-@app.cell
 def _(np):
     def run_simulation(params, scheme="Euler"):
         """
@@ -305,10 +305,10 @@ def _(mo):
 
 
 @app.cell
-def _(plt, show_plot_svg, stable_points, unstable_points):
+def _(plt, scheme_dropdown, show_plot_svg, stable_points, unstable_points):
     _fig, _ax = plt.subplots(1, 1, figsize=(10, 6))
 
-    _ax.set_title(r"Numerical Stability Map for $p$ and $\alpha$")
+    _ax.set_title(rf"Numerical Stability Map for $p$ and $\alpha$ - {scheme_dropdown.value} Scheme")
     _ax.scatter(
         stable_points["p"],
         stable_points["alpha"],
@@ -322,10 +322,10 @@ def _(plt, show_plot_svg, stable_points, unstable_points):
         marker="x",
         label="Unstable",
     )
-    _ax.set_xlabel(r"$p$ (Speed of Volatility Reversion)")
-    _ax.set_ylabel(r"$\alpha$ (Speed of Memory Adaptation)")
+    _ax.set_xlabel(r"$p$")
+    _ax.set_ylabel(r"$\alpha$")
     _ax.set_xscale("log")  # Log scale is often useful for p
-    _ax.set_yscale("log")  # and for alpha
+    # _ax.set_yscale("log")  # and for alpha
     _ax.grid(True, ls="--", which="both")
     _ax.legend()
 
@@ -386,10 +386,217 @@ def _(
 def _(N_slider, analyze_stability, np):
     stable_points, unstable_points = analyze_stability(
         p_range=np.logspace(0, 2, 21),
-        alpha_range=np.logspace(0, 2, 21),
+        # alpha_range=np.logspace(0, 2, 21),
+        alpha_range=np.linspace(1e-4, 1e-2, 21),
         N=N_slider.value,
     )
     return stable_points, unstable_points
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""## Part c)""")
+    return
+
+
+@app.cell
+def _(
+    mu_slider,
+    np,
+    scheme_dropdown,
+    sigma0_slider,
+    tracks_slider,
+    xi0_slider,
+):
+    def get_BS_convergence_params():
+        """Returns a dictionary of model and simulation parameters for the full model."""
+        return {
+            # Model Parameters
+            "S0": 50.0,  # Initial stock price
+            "sigma0": sigma0_slider.value,  # Initial volatility
+            "xi0": xi0_slider.value,  # Initial long-term average volatility
+            "mu": mu_slider.value,  # Drift (annual)
+            # Simulation Parameters
+            "T": 1.0,  # Time horizon (1 year)
+            "num_tracks": tracks_slider.value,  # Number of paths to simulate
+            "N_list": np.logspace(
+                4, 9, 6, base=2, dtype=int
+            ),  # Step counts for convergence test
+            "M": 10000,  # Number of Monte Carlo paths for averaging"
+        }
+
+
+    def simulate_BS_final_value(
+        S0, mu, sigma, T, dW, scheme=scheme_dropdown.value
+    ):
+        """
+        Simulates the final value S(T) for a single path of the Black-Scholes model using the given scheme.
+
+        Parameters:
+        - S0: Initial stock price
+        - mu: Drift parameter
+        - sigma: Constant volatility
+        - T: Total time
+        - dW: Array of Weiner process increments (must match the number of steps N, where dt = T/N)
+        - scheme: 'Euler' or 'Milstein'
+
+        Returns:
+        - S_T: The final simulated stock price S(T)
+        """
+        N = len(dW)
+        dt = T / N
+        S = S0
+        for n in range(N):
+            drift = mu * S
+            diffusion = sigma * S
+            if scheme == "Euler":
+                S += drift * dt + diffusion * dW[n]
+            elif scheme == "Milstein":
+                correction = 0.5 * diffusion * sigma * (dW[n] ** 2 - dt)
+                S += drift * dt + diffusion * dW[n] + correction
+            # Enforce positivity for real stock values ?
+            # S = max(S, 0)
+        return S
+
+
+    def exact_BS_final_value(S0, mu, sigma, T, W_T):
+        """
+        Computes the exact final value S(T) for the Black-Scholes model given W_T.
+
+        Parameters:
+        - S0: Initial stock price
+        - mu: Drift parameter
+        - sigma: Constant volatility
+        - T: Total time
+        - W_T: The Wiener process value at T (sum of increments)
+
+        Returns:
+        - S_T_exact: The exact stock price at T
+        """
+        return S0 * np.exp((mu - 0.5 * sigma**2) * T + sigma * W_T)
+    return (
+        exact_BS_final_value,
+        get_BS_convergence_params,
+        simulate_BS_final_value,
+    )
+
+
+@app.cell
+def _(exact_BS_final_value, np, simulate_BS_final_value):
+    def convergence_test_BS(params):
+        """
+        Runs a strong convergence test for the Black-Scholes model to verify the orders of the Euler (0.5) and Milstein (1.0) schemes.
+
+        Parameters:
+        - S0: Initial stock price
+        - mu: Drift parameter
+        - sigma: Constant volatility
+        - T: Total time
+        - N_list: List of step counts (e.g., [16, 32, 64, 128, 256, 512]), must be increasing powers of 2
+        - M: Number of Monte Carlo paths for averaging
+
+        Returns:
+        - dt_array: Array of time steps corresponding to N_list
+        - avg_errors_euler: Average strong errors for Euler scheme
+        - avg_errors_milstein: Average strong errors for Milstein scheme
+        """
+        S0 = params["S0"]
+        mu = params["mu"]
+        sigma = params["sigma0"]
+        T = params["T"]
+        N_list = params["N_list"]
+        M = params["M"]
+
+        # Identify the finest resolution
+        finest_N = max(N_list)
+        dt_finest = T / finest_N
+
+        # Initialize arrays to store average errors
+        num_dt = len(N_list)
+        avg_errors_euler = np.zeros(num_dt)
+        avg_errors_milstein = np.zeros(num_dt)
+
+        # Loop over M paths
+        for m in range(M):
+            # Generate Brownian increments at the finest resolution
+            dW_finest = np.random.standard_normal(finest_N) * np.sqrt(dt_finest)
+
+            # Compute W_T (same for all resolutions)
+            W_T = np.sum(dW_finest)
+
+            # Compute the exact S(T) (same for all resolutions)
+            S_exact = exact_BS_final_value(S0, mu, sigma, T, W_T)
+
+            # For each N in N_list, compute coarse increments and simulate
+            for i, N in enumerate(N_list):
+                dt = T / N
+                step_size = finest_N // N  # Assumes N_list are powers of 2
+
+                # Sum fine increments to get coarse increments
+                dW_coarse = np.sum(dW_finest.reshape(N, step_size), axis=1)
+
+                # Simulate numerical S(T) for Euler and Milstein
+                S_euler = simulate_BS_final_value(
+                    S0, mu, sigma, T, dW_coarse, scheme="Euler"
+                )
+                S_milstein = simulate_BS_final_value(
+                    S0, mu, sigma, T, dW_coarse, scheme="Milstein"
+                )
+
+                # Compute absolute errors
+                error_euler = np.abs(S_euler - S_exact)
+                error_milstein = np.abs(S_milstein - S_exact)
+
+                # Accumulate errors
+                avg_errors_euler[i] += error_euler
+                avg_errors_milstein[i] += error_milstein
+
+        # Average over M paths
+        avg_errors_euler /= M
+        avg_errors_milstein /= M
+
+        # Compute dt array
+        dt_array = T / np.array(N_list)
+
+        return dt_array, avg_errors_euler, avg_errors_milstein
+    return (convergence_test_BS,)
+
+
+@app.cell
+def _(convergence_test_BS, get_BS_convergence_params):
+    dt_array, avg_errors_euler, avg_errors_milstein = convergence_test_BS(
+        get_BS_convergence_params()
+    )
+    return avg_errors_euler, avg_errors_milstein, dt_array
+
+
+@app.cell
+def _(avg_errors_euler, avg_errors_milstein, dt_array, np):
+    # Calculate the convergence orders
+    order_euler = np.polyfit(np.log(dt_array), np.log(avg_errors_euler), 1)[0]
+    order_milstein = np.polyfit(np.log(dt_array), np.log(avg_errors_milstein), 1)[0]
+
+    print(f"Numerically calculated strong order for Euler: {order_euler:.4f}")
+    print(f"Numerically calculated strong order for Milstein: {order_milstein:.4f}")
+    return
+
+
+@app.cell
+def _(avg_errors_euler, avg_errors_milstein, dt_array, plt, show_plot_svg):
+    _fig, _ax = plt.subplots(1, 1, figsize=(10, 6))
+
+    _ax.loglog(dt_array, avg_errors_euler, label="Euler (order 0.5)", marker="o")
+    _ax.loglog(
+        dt_array, avg_errors_milstein, label="Milstein (order 1.0)", marker="x"
+    )
+    _ax.set_title("Strong Convergence Test for Black-Scholes Model")
+    _ax.set_xlabel(r"Time Step $\Delta t$")
+    _ax.set_ylabel("Average Strong Error")
+    _ax.legend()
+    _ax.grid(True, which="both", ls="--")
+
+    show_plot_svg(_fig)
+    return
 
 
 @app.cell
@@ -401,8 +608,8 @@ def _(mo):
 @app.cell
 def _(mo):
     # sliders
-    p_slider = mo.ui.slider(0, 100, 0.1, value=50)
-    alpha_slider = mo.ui.slider(0.1, 100, 0.1, value=0.5)
+    p_slider = mo.ui.slider(-20, 20, 0.1, value=1.0)
+    alpha_slider = mo.ui.slider(0.001, 10, 0.1, value=0.5)
     tracks_slider = mo.ui.slider(1, 10, 1, value=5)
     sigma0_slider = mo.ui.slider(0.01, 1.0, 0.01, value=0.20)
     xi0_slider = mo.ui.slider(0.01, 1.0, 0.01, value=0.20)

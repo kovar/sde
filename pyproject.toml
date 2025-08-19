@@ -1,0 +1,27 @@
+[project]
+name = "sde-assignment"
+version = "0.0.1"
+description = "Code and notes for the SDE assignment"
+authors = [
+    { name = "Jiri Kovar", email = "j.kovar@student.tudelft.nl" },
+]
+license = "MIT"
+requires-python = ">=3.11"
+readme = "README.md"
+dependencies = [
+    "marimo>=0.14.8",
+    "matplotlib>=3.10.1",
+    "numpy>=1.25.1",
+    "scipy>=1.15.3",
+]
+optional-dependencies = { dev = [
+        "ruff>=0.11.12",
+        "pytest>=8.4.0",
+]}
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.pyfluids]
+units_system = "SI"

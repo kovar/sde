@@ -57,12 +57,6 @@ def _(mo):
     return
 
 
-@app.cell
-def _(mo):
-    mo.md(r"""### Numerical Simulations for Black-Scholes""")
-    return
-
-
 @app.cell(hide_code=True)
 def _(S, plt, scheme_dropdown, show_plot_svg, t):
     _fig, _ax = plt.subplots(1, 1, figsize=(10, 6))
@@ -195,6 +189,41 @@ def _(
 
 
 @app.cell
+def _(mo):
+    mo.md(r"""### Numerical Simulations for Black-Scholes""")
+    return
+
+
+@app.cell
+def _(N_slider, mu_slider, sigma0_slider, tracks_slider):
+    def get_params():
+        """Returns a dictionary of model and simulation parameters."""
+        return {
+            # Model Parameters
+            "S0": 50.0,  # Initial stock price
+            "mu": mu_slider.value,  # Drift (annual)
+            "sigma": sigma0_slider.value,  # Volatility (annual)
+            # Simulation Parameters
+            "T": 1.0,  # Time horizon (1 year)
+            "N": N_slider.value,  # Number of time steps (e.g., trading days in a year)
+            "num_tracks": tracks_slider.value,  # Number of tracks to simulate
+        }
+    return (get_params,)
+
+
+@app.cell
+def _(get_params, regenerate_button, run_simulation, scheme_dropdown):
+    regenerate_button  # regenerates the plot when the regenerate button is pressed
+
+    # Get parameters
+    params_BS = get_params()
+
+    # Run simulation
+    t_BS, S_BS = run_simulation(params_BS, scheme_dropdown.value)
+    return S_BS, t_BS
+
+
+@app.cell
 def _(np):
     def run_simulation(params, scheme="Euler"):
         """
@@ -240,35 +269,6 @@ def _(np):
 
         return t, S
     return (run_simulation,)
-
-
-@app.cell
-def _(N_slider, mu_slider, sigma0_slider, tracks_slider):
-    def get_params():
-        """Returns a dictionary of model and simulation parameters."""
-        return {
-            # Model Parameters
-            "S0": 50.0,  # Initial stock price
-            "mu": mu_slider.value,  # Drift (annual)
-            "sigma": sigma0_slider.value,  # Volatility (annual)
-            # Simulation Parameters
-            "T": 1.0,  # Time horizon (1 year)
-            "N": N_slider.value,  # Number of time steps (e.g., trading days in a year)
-            "num_tracks": tracks_slider.value,  # Number of tracks to simulate
-        }
-    return (get_params,)
-
-
-@app.cell
-def _(get_params, regenerate_button, run_simulation, scheme_dropdown):
-    regenerate_button  # regenerates the plot when the regenerate button is pressed
-
-    # Get parameters
-    params_BS = get_params()
-
-    # Run simulation
-    t_BS, S_BS = run_simulation(params_BS, scheme_dropdown.value)
-    return S_BS, t_BS
 
 
 @app.cell
@@ -1037,7 +1037,7 @@ def _(calculate_strong_proxy, np, run_simulation_refactored):
         dt_array = T / np.array(N_list)
 
         return dt_array, avg_errors_euler, avg_errors_milstein
-    return (strong_convergence_test_full,)
+    return
 
 
 @app.cell
@@ -1160,15 +1160,15 @@ def _(calculate_strong_proxy, np, run_simulation_refactored):
         dt_array = T / np.array(N_list)
 
         return dt_array, avg_errors_euler, avg_errors_milstein
-    return (weak_convergence_test_full_2,)
+    return
 
 
-@app.cell(disabled=True)
-def _(get_proxy_params, strong_convergence_test_full):
-    dt_strong_full, err_strong_euler_full, err_strong_milstein_full = (
-        strong_convergence_test_full(get_proxy_params())
-    )
-    return dt_strong_full, err_strong_euler_full, err_strong_milstein_full
+@app.cell
+def _():
+    # dt_strong_full, err_strong_euler_full, err_strong_milstein_full = (
+    #     strong_convergence_test_full(get_proxy_params())
+    # )
+    return
 
 
 @app.cell
@@ -1224,11 +1224,11 @@ def _(
 
 
 @app.cell
-def _(get_proxy_params, weak_convergence_test_full_2):
-    dt_weak_full, err_weak_euler_full, err_weak_milstein_full = (
-        weak_convergence_test_full_2(get_proxy_params())
-    )
-    return dt_weak_full, err_weak_euler_full, err_weak_milstein_full
+def _():
+    # dt_weak_full, err_weak_euler_full, err_weak_milstein_full = (
+    #     weak_convergence_test_full_2(get_proxy_params())
+    # )
+    return
 
 
 @app.cell
